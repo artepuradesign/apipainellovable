@@ -34,8 +34,13 @@ const ConsultarNomeCompleto = () => {
   const location = useLocation();
   const { modules } = useApiModules();
   const [nomeCompleto, setNomeCompleto] = useState('');
-  const [linkManual, setLinkManual] = useState('');
   const [loading, setLoading] = useState(false);
+  // Modal de processamento (igual ao /dashboard/consultar-cpf-simples)
+  const [verificationLoadingOpen, setVerificationLoadingOpen] = useState(false);
+  const [verificationProgress, setVerificationProgress] = useState(0);
+  const [verificationPhase, setVerificationPhase] = useState<'initial' | null>(null);
+  const [verificationSecondsLeft, setVerificationSecondsLeft] = useState<number | null>(null);
+
   const [resultados, setResultados] = useState<NomeConsultaResultado[]>([]);
   const [resultadoLink, setResultadoLink] = useState<string | null>(null);
   const [totalEncontrados, setTotalEncontrados] = useState(0);
@@ -60,6 +65,7 @@ const ConsultarNomeCompleto = () => {
 
   const isMobile = useIsMobile();
   const resultRef = useRef<HTMLDivElement>(null);
+  const progressTimerRef = useRef<number | null>(null);
   const { user } = useAuth();
   
   const { balance, loadBalance: reloadApiBalance } = useWalletBalance();
@@ -105,6 +111,15 @@ const ConsultarNomeCompleto = () => {
       loadStats();
     }
   }, [user, reloadApiBalance]);
+
+  useEffect(() => {
+    return () => {
+      if (progressTimerRef.current) {
+        window.clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -229,11 +244,32 @@ const ConsultarNomeCompleto = () => {
     : { discountedPrice: originalPrice, hasDiscount: false };
   const discount = hasDiscount ? discountPercentage : 0;
 
+  const inputValue = (nomeCompleto || '').trim();
+  const isManualLink = inputValue.includes('pastebin.sbs') || inputValue.includes('api.fdxapis.us');
+  const canSearch = isManualLink || inputValue.length >= 5;
+
+  const startFakeProgress = () => {
+    if (progressTimerRef.current) {
+      window.clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+
+    setVerificationProgress(8);
+    const startedAt = Date.now();
+    progressTimerRef.current = window.setInterval(() => {
+      // Progresso “fake” até 95% enquanto espera a API
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      setVerificationSecondsLeft(elapsed);
+      setVerificationProgress((prev) => {
+        const next = Math.min(prev + Math.max(1, Math.round(Math.random() * 6)), 95);
+        return next;
+      });
+    }, 900);
+  };
+
   const handleSearch = async () => {
     // Validar entrada
-    const hasLinkManual = linkManual && (linkManual.includes('pastebin.sbs') || linkManual.includes('api.fdxapis.us'));
-    
-    if (!hasLinkManual && (!nomeCompleto || nomeCompleto.trim().length < 5)) {
+    if (!canSearch) {
       toast.error("Digite um nome válido (mínimo 5 caracteres) ou cole um link de consulta anterior");
       return;
     }
@@ -254,17 +290,29 @@ const ConsultarNomeCompleto = () => {
       return;
     }
 
+    // Abrir modal imediatamente (igual CPF simples)
+    setVerificationLoadingOpen(true);
+    setVerificationPhase('initial');
+    setVerificationSecondsLeft(0);
+    setLogConsulta([
+      isManualLink ? 'Consulta direta via link manual...' : 'Enviando nome para consulta...'
+    ]);
+    startFakeProgress();
+
     setLoading(true);
     setResultados([]);
     setResultadoLink(null);
     setTotalEncontrados(0);
-    setLogConsulta([]);
+    // logConsulta já foi inicializado acima para o modal
 
     try {
       console.log('🔍 [CONSULTA_NOME] Iniciando consulta por nome:', nomeCompleto || '(link manual)');
       
       // Chamar API externa
-      const response = await buscaNomeService.consultarNome(nomeCompleto.trim(), hasLinkManual ? linkManual : undefined);
+      const response = await buscaNomeService.consultarNome(
+        isManualLink ? '' : inputValue,
+        isManualLink ? inputValue : undefined
+      );
       
       console.log('📡 [CONSULTA_NOME] Resposta:', response);
 
@@ -283,7 +331,7 @@ const ConsultarNomeCompleto = () => {
         const registroPayload = {
           user_id: parseInt(user.id),
           module_type: 'nome',
-          document: nomeCompleto.trim() || linkManual,
+          document: inputValue,
           cost: finalPrice,
           status: data.total_encontrados > 0 ? 'completed' : 'naoencontrado',
           result_data: data,
@@ -358,14 +406,28 @@ const ConsultarNomeCompleto = () => {
         }, 1000);
 
       } else {
+        setLogConsulta((prev) => [...prev, `ERRO: ${response.error || 'Erro ao realizar consulta'}`]);
         toast.error(response.error || "Erro ao realizar consulta");
       }
 
     } catch (error) {
       console.error('❌ [CONSULTA_NOME] Erro:', error);
+      setLogConsulta((prev) => [...prev, `ERRO: ${error instanceof Error ? error.message : 'Falha na comunicação'}`]);
       toast.error("Falha na comunicação com o servidor");
     } finally {
       setLoading(false);
+
+      if (progressTimerRef.current) {
+        window.clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      setVerificationProgress(100);
+      setTimeout(() => {
+        setVerificationLoadingOpen(false);
+        setVerificationSecondsLeft(null);
+        setVerificationPhase(null);
+        setVerificationProgress(0);
+      }, 300);
     }
   };
 
@@ -391,59 +453,78 @@ const ConsultarNomeCompleto = () => {
     });
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate('/dashboard');
+  };
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="space-y-4 md:space-y-6 max-w-full overflow-x-hidden">
       <ScrollToTop />
-      
-      <SimpleTitleBar
-        title={currentModule?.title || 'Consulta por Nome Completo'}
-        subtitle={currentModule?.description || 'Busque pessoas pelo nome completo'}
-        onBack={() => navigate('/dashboard')}
-      />
-      
-      <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Card de Consulta */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="w-full">
+      <div className="w-full">
+        <SimpleTitleBar
+          title={currentModule?.title || 'Consulta por Nome Completo'}
+          subtitle={currentModule?.description || 'Busque pessoas pelo nome completo'}
+          icon={<Search className="h-4 w-4 md:h-5 md:w-5" />}
+          onBack={handleBack}
+        />
+
+        <div className="mt-4 md:mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 md:gap-6 lg:gap-8">
+          {/* Formulário de Consulta */}
+          <Card className="dark:bg-gray-800 dark:border-gray-700 w-full">
             <CardHeader className="pb-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
-                    <User className="h-5 w-5 md:h-6 md:w-6 text-purple-600 dark:text-purple-400" />
+              {/* Compact Price Display (igual CPF Simples) */}
+              <div className="relative bg-gradient-to-br from-purple-50/50 via-white to-blue-50/30 dark:from-gray-800/50 dark:via-gray-800 dark:to-purple-900/20 rounded-lg border border-purple-100/50 dark:border-purple-800/30 shadow-sm transition-all duration-300">
+                {hasDiscount && (
+                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none">
+                    <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white border-0 px-2.5 py-1 text-xs font-bold shadow-lg">
+                      {discount}% OFF
+                    </Badge>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">
-                      Plano Ativo
-                    </p>
-                    <h3 className="text-sm md:text-base font-bold text-foreground truncate">
-                      {hasActiveSubscription ? subscription?.plan_name : userPlan}
-                    </h3>
+                )}
+
+                <div className="relative p-3.5 md:p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-1 h-10 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-0.5">
+                          Plano Ativo
+                        </p>
+                        <h3 className="text-sm md:text-base font-bold text-gray-900 dark:text-white truncate">
+                          {hasActiveSubscription ? subscription?.plan_name : userPlan}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                      {hasDiscount && (
+                        <span className="text-[10px] md:text-xs text-gray-400 dark:text-gray-500 line-through">
+                          R$ {originalPrice.toFixed(2)}
+                        </span>
+                      )}
+                      <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 dark:from-purple-400 dark:to-blue-400 bg-clip-text text-transparent whitespace-nowrap">
+                        R$ {finalPrice.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                
-                <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                  {hasDiscount && (
-                    <span className="text-[10px] md:text-xs text-muted-foreground line-through">
-                      R$ {originalPrice.toFixed(2)}
-                    </span>
-                  )}
-                  <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 dark:from-purple-400 dark:to-blue-400 bg-clip-text text-transparent whitespace-nowrap">
-                    R$ {finalPrice.toFixed(2)}
-                  </span>
                 </div>
               </div>
             </CardHeader>
 
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="nomeCompleto">Nome Completo</Label>
+                <Label htmlFor="nomeCompleto">Nome completo (ou cole o link)</Label>
                 <Input
                   id="nomeCompleto"
-                  placeholder="Digite o nome completo (ex: João da Silva)"
+                  placeholder="Digite o nome completo (mín. 5) ou cole o link (pastebin/api.fdxapis)"
                   value={nomeCompleto}
                   onChange={(e) => setNomeCompleto(e.target.value)}
                   onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !loading) {
+                    if (e.key === 'Enter' && canSearch && !loading && hasSufficientBalance(finalPrice) && !modulePriceLoading) {
                       handleSearch();
                     }
                   }}
@@ -451,40 +532,78 @@ const ConsultarNomeCompleto = () => {
                 />
               </div>
 
-              <div className="text-center text-sm text-muted-foreground">OU</div>
-
-              <div className="space-y-2">
-                <Label htmlFor="linkManual">Link de Consulta Anterior</Label>
-                <Input
-                  id="linkManual"
-                  placeholder="Cole aqui o link (pastebin.sbs ou api.fdxapis.us)"
-                  value={linkManual}
-                  onChange={(e) => setLinkManual(e.target.value)}
-                />
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={handleSearch}
+                  disabled={loading || !canSearch || !hasSufficientBalance(finalPrice) || modulePriceLoading}
+                  className="w-full bg-brand-purple hover:bg-brand-darkPurple"
+                >
+                  <Search className="mr-2 h-4 w-4" />
+                  {loading ? "Consultando..." : modulePriceLoading ? "Carregando preço..." : `Consultar Nome (R$ ${finalPrice.toFixed(2)})`}
+                </Button>
               </div>
 
-              <Button
-                onClick={handleSearch}
-                disabled={loading || (!nomeCompleto && !linkManual) || !hasSufficientBalance(finalPrice) || modulePriceLoading}
-                className="w-full bg-brand-purple hover:bg-brand-darkPurple"
-              >
-                <Search className="mr-2 h-4 w-4" />
-                {loading ? "Consultando..." : modulePriceLoading ? "Carregando..." : `Consultar (R$ ${finalPrice.toFixed(2)})`}
-              </Button>
+              {/* Modal de Verificação (igual CPF Simples) */}
+              <Dialog open={verificationLoadingOpen} onOpenChange={setVerificationLoadingOpen}>
+                <DialogContent className="sm:max-w-[360px]">
+                  <DialogHeader>
+                    <DialogTitle className="text-center">Processando Consulta</DialogTitle>
+                    <DialogDescription className="text-center">
+                      Aguarde a exibição das informações
+                    </DialogDescription>
+                  </DialogHeader>
 
-              {!hasSufficientBalance(finalPrice) && (nomeCompleto || linkManual) && (
-                <div className="mt-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-                  <div className="flex items-start text-destructive">
+                  <div className="flex flex-col items-center space-y-4 py-6">
+                    <div className="relative">
+                      <div className="w-16 h-16 bg-gradient-to-br from-brand-purple/20 to-pink-500/20 rounded-full flex items-center justify-center">
+                        <LoadingSpinner size="lg" className="text-brand-purple" />
+                      </div>
+                      <div className="absolute inset-0 w-16 h-16 bg-gradient-to-br from-brand-purple/10 to-pink-500/10 rounded-full animate-ping"></div>
+                    </div>
+
+                    <div className="w-full max-w-xs space-y-3">
+                      <div className="space-y-2">
+                        <Progress value={verificationProgress} className="w-full" />
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{verificationProgress}%</span>
+                          <span>{verificationSecondsLeft ?? 0}s</span>
+                        </div>
+                      </div>
+
+                      <div className="w-full rounded-md border border-border bg-muted/30 p-2 max-h-32 overflow-auto">
+                        <pre className="text-[11px] leading-snug text-muted-foreground whitespace-pre-wrap">
+                          {(logConsulta && logConsulta.length > 0) ? logConsulta.join('\n') : 'Iniciando...'}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              {/* Indicador de saldo insuficiente */}
+              {!hasSufficientBalance(finalPrice) && canSearch && (
+                <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg space-y-3">
+                  <div className="flex items-start text-red-700 dark:text-red-300">
                     <AlertCircle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs sm:text-sm block">
+                      <span className="text-xs sm:text-sm block break-words">
                         Saldo insuficiente. Necessário: R$ {finalPrice.toFixed(2)}
                       </span>
-                      <span className="text-xs sm:text-sm block">
+                      <span className="text-xs sm:text-sm block break-words">
                         Disponível: R$ {totalBalance.toFixed(2)}
                       </span>
                     </div>
                   </div>
+                  <div className="text-xs text-red-600 dark:text-red-400 break-words">
+                    Saldo do plano: R$ {planBalance.toFixed(2)} | Saldo da carteira: R$ {walletBalance.toFixed(2)}
+                  </div>
+                  <Button
+                    onClick={() => navigate('/dashboard/historico')}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    Ver histórico
+                  </Button>
                 </div>
               )}
             </CardContent>
