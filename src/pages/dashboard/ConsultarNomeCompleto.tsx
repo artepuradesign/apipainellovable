@@ -290,6 +290,10 @@ const ConsultarNomeCompleto = () => {
       return;
     }
 
+    // Timestamp para garantir tempo mínimo no modal (ex: 5s)
+    const minDisplayMs = 5000;
+    const startTime = Date.now();
+
     // Abrir modal imediatamente (igual CPF simples)
     setVerificationLoadingOpen(true);
     setVerificationPhase('initial');
@@ -304,6 +308,14 @@ const ConsultarNomeCompleto = () => {
     setResultadoLink(null);
     setTotalEncontrados(0);
     // logConsulta já foi inicializado acima para o modal
+
+    // Helper para garantir tempo mínimo no modal
+    const waitRemainingTime = async () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed < minDisplayMs) {
+        await new Promise((resolve) => setTimeout(resolve, minDisplayMs - elapsed));
+      }
+    };
 
     try {
       console.log('🔍 [CONSULTA_NOME] Iniciando consulta por nome:', nomeCompleto || '(link manual)');
@@ -410,10 +422,19 @@ const ConsultarNomeCompleto = () => {
         toast.error(response.error || "Erro ao realizar consulta");
       }
 
+      // Esperar tempo restante antes de fechar o modal
+      await waitRemainingTime();
+
     } catch (error) {
       console.error('❌ [CONSULTA_NOME] Erro:', error);
       setLogConsulta((prev) => [...prev, `ERRO: ${error instanceof Error ? error.message : 'Falha na comunicação'}`]);
       toast.error("Falha na comunicação com o servidor");
+
+      // Mesmo em erro, esperar tempo mínimo
+      const elapsedMs = Date.now() - startTime;
+      if (elapsedMs < minDisplayMs) {
+        await new Promise((resolve) => setTimeout(resolve, minDisplayMs - elapsedMs));
+      }
     } finally {
       setLoading(false);
 
@@ -422,12 +443,14 @@ const ConsultarNomeCompleto = () => {
         progressTimerRef.current = null;
       }
       setVerificationProgress(100);
-      setTimeout(() => {
-        setVerificationLoadingOpen(false);
-        setVerificationSecondsLeft(null);
-        setVerificationPhase(null);
-        setVerificationProgress(0);
-      }, 300);
+
+      // Aguarda um pouco em 100% para o usuário visualizar
+      await new Promise((r) => setTimeout(r, 500));
+
+      setVerificationLoadingOpen(false);
+      setVerificationSecondsLeft(null);
+      setVerificationPhase(null);
+      setVerificationProgress(0);
     }
   };
 
