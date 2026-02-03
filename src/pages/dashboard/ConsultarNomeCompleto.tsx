@@ -28,6 +28,7 @@ import LoadingSpinner from '@/components/ui/loading-spinner';
 import SimpleTitleBar from '@/components/dashboard/SimpleTitleBar';
 import ScrollToTop from '@/components/ui/scroll-to-top';
 import { buscaNomeService, NomeConsultaResultado, NomeConsultaResponse } from '@/services/buscaNomeService';
+import { parseFdxHtmlResults } from '@/utils/fdxHtmlResultsParser';
 
 const ConsultarNomeCompleto = () => {
   const navigate = useNavigate();
@@ -325,11 +326,53 @@ const ConsultarNomeCompleto = () => {
 
       if (response.success && response.data) {
         const data = response.data;
-        
-        setResultados(data.resultados || []);
-        setResultadoLink(data.link);
-        setTotalEncontrados(data.total_encontrados);
+
+        // Em alguns casos a API retorna apenas o link (HTML com tabela) e não popula `resultados`.
+        // Então tentamos buscar/parsing do link para preencher Nome/CPF/Nascimento.
+        let finalResultados: NomeConsultaResultado[] = Array.isArray(data.resultados) ? data.resultados : [];
+        let finalTotal = Number(data.total_encontrados || 0);
+        const finalLink = data.link || null;
+
+        setResultadoLink(finalLink);
         setLogConsulta(data.log || []);
+
+        const shouldTryParseLink = (!!finalLink && (finalResultados.length === 0 || finalTotal === 0));
+        if (shouldTryParseLink) {
+          setLogConsulta((prev) => [...prev, '🔄 Carregando resultados do link...']);
+          try {
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 45000);
+            const linkResp = await fetch(finalLink!, {
+              method: 'GET',
+              signal: controller.signal,
+            });
+            const html = await linkResp.text();
+            window.clearTimeout(timeoutId);
+
+            const parsed = parseFdxHtmlResults(html);
+            if (parsed.length > 0) {
+              finalResultados = parsed;
+              finalTotal = parsed.length;
+              setLogConsulta((prev) => [...prev, `✅ ${parsed.length} registro(s) carregado(s) do link`]);
+            } else {
+              setLogConsulta((prev) => [...prev, '⚠️ Link retornou dados sem tabela (ou vazio).']);
+            }
+          } catch (e) {
+            // Se der erro (CORS/timeout), ainda deixamos o botão "Ver Link" disponível.
+            setLogConsulta((prev) => [...prev, '⚠️ Não foi possível carregar o link automaticamente. Use "Ver Link".']);
+          }
+        }
+
+        // Normalizar payload para UI + histórico
+        const normalizedData: NomeConsultaResponse = {
+          ...data,
+          resultados: finalResultados,
+          total_encontrados: finalTotal,
+          link: finalLink || data.link,
+        };
+
+        setResultados(normalizedData.resultados || []);
+        setTotalEncontrados(normalizedData.total_encontrados || 0);
 
         // Registrar consulta no histórico
         const saldoUsado = planBalance >= finalPrice ? 'plano' : 
@@ -340,8 +383,8 @@ const ConsultarNomeCompleto = () => {
           module_type: 'nome',
           document: inputValue,
           cost: finalPrice,
-          status: data.total_encontrados > 0 ? 'completed' : 'naoencontrado',
-          result_data: data,
+          status: normalizedData.total_encontrados > 0 ? 'completed' : 'naoencontrado',
+          result_data: normalizedData,
           ip_address: window.location.hostname,
           user_agent: navigator.userAgent,
           saldo_usado: saldoUsado,
@@ -358,8 +401,8 @@ const ConsultarNomeCompleto = () => {
             module_id: 156,
             timestamp: new Date().toISOString(),
             saldo_usado: saldoUsado,
-            link_resultado: data.link,
-            total_encontrados: data.total_encontrados
+            link_resultado: normalizedData.link,
+            total_encontrados: normalizedData.total_encontrados
           }
         };
 
@@ -370,10 +413,10 @@ const ConsultarNomeCompleto = () => {
           console.error('❌ [CONSULTA_NOME] Erro ao registrar consulta:', regError);
         }
 
-        if (data.total_encontrados > 0) {
+        if (normalizedData.total_encontrados > 0) {
           toast.success(
             <div className="flex flex-col gap-0.5">
-              <div>✅ {data.total_encontrados} registro(s) encontrado(s)!</div>
+              <div>✅ {normalizedData.total_encontrados} registro(s) encontrado(s)!</div>
               <div className="text-sm text-muted-foreground">
                 Valor cobrado: R$ {finalPrice.toFixed(2)}
               </div>
