@@ -70,11 +70,23 @@ export const buscaNomeService = {
         console.error('❌ [BUSCA_NOME] Erro HTTP:', response.status, errorText);
         return {
           success: false,
-          error: `Erro na comunicação: ${response.status}`
+          error: `Erro na comunicação: ${response.status}${errorText ? ` - ${errorText.slice(0, 200)}` : ''}`
         };
       }
 
-      const data: NomeConsultaResponse = await response.json();
+      // Parse robusto (alguns erros retornam HTML/texto e quebram response.json())
+      const rawText = await response.text();
+      let data: NomeConsultaResponse;
+      try {
+        data = JSON.parse(rawText) as NomeConsultaResponse;
+      } catch (parseError) {
+        console.error('❌ [BUSCA_NOME] Resposta não-JSON:', rawText);
+        return {
+          success: false,
+          error: 'Resposta inválida do servidor (não retornou JSON)'
+        };
+      }
+
       console.log('📥 [BUSCA_NOME] Resposta recebida:', {
         status: data.status,
         total_encontrados: data.total_encontrados,
