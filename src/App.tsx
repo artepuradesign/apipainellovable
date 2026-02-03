@@ -70,6 +70,7 @@ import BuscaPai from '@/pages/dashboard/BuscaPai';
 import CheckerLista from '@/pages/dashboard/CheckerLista';
 import Historico from '@/pages/dashboard/Historico';
 import HistoricoConsultasCpf from '@/pages/dashboard/HistoricoConsultasCpf';
+import ConsultarNomeCompleto from '@/pages/dashboard/ConsultarNomeCompleto';
 
 
 import Indique from '@/pages/dashboard/Indique';
@@ -215,6 +216,7 @@ function App() {
                     <Route path="/dashboard/consultar-cnpj" element={<DashboardLayout><ConsultarCNPJ /></DashboardLayout>} />
                     <Route path="/dashboard/consultar-veiculo" element={<DashboardLayout><ConsultarVeiculo /></DashboardLayout>} />
                     <Route path="/dashboard/busca-nome" element={<DashboardLayout><BuscaNome /></DashboardLayout>} />
+                    <Route path="/dashboard/consultar-nome-completo" element={<DashboardLayout><ConsultarNomeCompleto /></DashboardLayout>} />
                     <Route path="/dashboard/busca-mae" element={<DashboardLayout><BuscaMae /></DashboardLayout>} />
                     <Route path="/dashboard/busca-pai" element={<DashboardLayout><BuscaPai /></DashboardLayout>} />
                     <Route path="/dashboard/checker-lista" element={<DashboardLayout><CheckerLista /></DashboardLayout>} />
