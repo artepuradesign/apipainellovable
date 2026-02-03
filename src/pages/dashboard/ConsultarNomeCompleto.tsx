@@ -937,42 +937,52 @@ const ConsultarNomeCompleto = () => {
         </CardContent>
       </Card>
 
-      {/* ESTATÍSTICAS */}
-      <Card className="dark:bg-gray-800 dark:border-gray-700 w-full">
-        <CardHeader className="pb-4">
-          <CardTitle className={`flex items-center ${isMobile ? 'text-base' : 'text-lg sm:text-xl'}`}>
-            <Settings className={`mr-2 flex-shrink-0 ${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
-            <span className="truncate">Estatísticas</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {statsLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-              <span className="ml-3 text-muted-foreground text-sm">Carregando estatísticas...</span>
+      {/* Stats Cards - Igual ao ConsultarCpfSimples */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+        <Card className="w-full">
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-center">
+              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-primary truncate">
+                {statsLoading ? '...' : stats.today}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Consultas Hoje</p>
             </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-muted/50 rounded-lg">
-                <p className="text-2xl font-bold text-foreground">{stats.total}</p>
-                <p className="text-xs text-muted-foreground">Total de Consultas</p>
-              </div>
-              <div className="text-center p-3 bg-muted/50 rounded-lg">
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.completed}</p>
-                <p className="text-xs text-muted-foreground">Concluídas</p>
-              </div>
-              <div className="text-center p-3 bg-muted/50 rounded-lg">
-                <p className="text-2xl font-bold text-foreground">{stats.today}</p>
-                <p className="text-xs text-muted-foreground">Hoje</p>
-              </div>
-              <div className="text-center p-3 bg-muted/50 rounded-lg">
-                <p className="text-2xl font-bold text-red-600 dark:text-red-400">R$ {stats.total_cost.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">Gasto Total</p>
-              </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="w-full">
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-center">
+              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-primary truncate">
+                {statsLoading ? '...' : stats.total}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Total de Consultas</p>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card className="w-full">
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-center">
+              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-green-600 truncate">
+                {statsLoading ? '...' : stats.completed}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Concluídas</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="w-full">
+          <CardContent className="p-3 sm:p-4">
+            <div className="text-center">
+              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-primary truncate">
+                R$ {statsLoading ? '0,00' : stats.total_cost.toFixed(2)}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Total Gasto</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
